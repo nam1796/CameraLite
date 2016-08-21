@@ -1,5 +1,5 @@
 # CameraLite
-Lite implemintation of the android camera.
+Lite implemintation of the android mCamera.
 It's a refactored version of this https://github.com/AkramaMirza/snapchat. 
 
 It has minimal features such as:
@@ -7,7 +7,7 @@ It has minimal features such as:
 - taking pictures.
 - reusable fragment
 
-My problem was that I couldn't get rid of the camera preview being stretched or not being fullscreen
+My problem was that I couldn't get rid of the mCamera preview being stretched or not being fullscreen
 even though I searched everywhere for a solution. Finally, I found that repo and it actually worked. 
 I wanted to share it here on Github for my use on future projects
 and also for anyone who is stuck like I was.

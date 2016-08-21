@@ -8,14 +8,25 @@ import android.animation.AnimatorListenerAdapter;
 import android.animation.AnimatorSet;
 import android.app.Activity;
 import android.app.Fragment;
-import android.support.v4.app.FragmentManager;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.PixelFormat;
+import android.graphics.PorterDuff;
+import android.graphics.Rect;
+import android.graphics.RectF;
+import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.util.Log;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
+import android.view.TextureView;
 import android.view.View;
 import android.view.ViewAnimationUtils;
 import android.view.ViewGroup;
@@ -29,6 +40,7 @@ import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 
 
 /**
@@ -39,7 +51,7 @@ import java.util.Date;
  * Use the {@link CameraFragment#newInstance} factory method to
  * create an instance of this fragment.
  */
-public class CameraFragment extends android.support.v4.app.Fragment {
+public class CameraFragment extends android.support.v4.app.Fragment implements SurfaceHolder.Callback {
 
     private FrameLayout cameraFrame;
     private CameraTextureView cameraTextureView;
@@ -50,6 +62,25 @@ public class CameraFragment extends android.support.v4.app.Fragment {
     private boolean isFacingBack = true;
     public final int MEDIA_TYPE_IMAGE = 1;
     public final int MEDIA_TYPE_VIDEO = 2;
+
+    private static  final int FOCUS_AREA_SIZE= 300;
+
+    private SurfaceView transparentView;
+    private SurfaceHolder holderTransparent;
+
+    private Paint paint;
+    private Canvas canvas;
+    private float RectLeft;
+    private float RectTop;
+    private float RectRight;
+    private float RectBottom;
+
+
+    private float mDist;
+
+    public String TAG = "CameraLite";
+
+
 
     // TODO: Rename parameter arguments, choose names that match
     // the fragment initialization parameters, e.g. ARG_ITEM_NUMBER
@@ -114,7 +145,77 @@ public class CameraFragment extends android.support.v4.app.Fragment {
 
         cameraFrame = (FrameLayout) rootView.findViewById(R.id.cameraFrame);
         cameraTextureView = new CameraTextureView(MainApplication.getAppContext(), getCameraInstance(backCameraId));
+
         cameraFrame.addView(cameraTextureView);
+
+
+
+        transparentView = new SurfaceView(getContext());
+        transparentView.setZOrderOnTop(true);
+
+
+
+        holderTransparent = transparentView.getHolder();
+       // holderTransparent.setFormat(PixelFormat.TRANSPARENT);
+        holderTransparent.setFormat(PixelFormat.TRANSLUCENT);
+        holderTransparent.addCallback(this);
+      //  holderTransparent.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
+
+
+        cameraFrame.addView(transparentView);
+
+        View.OnTouchListener onTouchListner = new View.OnTouchListener() {
+
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+
+
+                // Get the pointer ID
+                Camera.Parameters params = cameraTextureView.getmCamera().getParameters();
+                int action = event.getAction();
+
+
+                if (event.getPointerCount() > 1) {
+                    // handle multi-touch events
+                    if (action == MotionEvent.ACTION_POINTER_DOWN) {
+
+                        Log.v(TAG, "Action Pointer Down");
+
+                        mDist = getFingerSpacing(event);
+
+                    } else if (action == MotionEvent.ACTION_MOVE && params.isZoomSupported()) {
+
+                        Log.v(TAG, "ACTION MOVE");
+
+                        cameraTextureView.getmCamera().cancelAutoFocus();
+                        handleZoom(event, params);
+
+                    }
+                } else {
+                    // handle single touch events
+                    if (action == MotionEvent.ACTION_UP) {
+
+                        Log.v(TAG, "Action UP :v ");
+
+
+
+                        handleFocus(event, params);
+                    }
+                }
+
+
+
+
+
+
+
+                return true;
+            }
+        };
+
+        transparentView.setOnTouchListener(onTouchListner);
+
+
 
         final Button switchCameraButton = (Button) rootView.findViewById(R.id.switchCameraButton);
         final Button captureButton = (Button) rootView.findViewById(R.id.captureButton);
@@ -147,7 +248,7 @@ public class CameraFragment extends android.support.v4.app.Fragment {
                     @Override
                     public void run() {
                         Bitmap bitmap = cameraTextureView.getBitmap();
-                        cameraTextureView.getCamera().stopPreview();
+                        cameraTextureView.getmCamera().stopPreview();
 
                         ByteArrayOutputStream stream = new ByteArrayOutputStream();
                         bitmap.compress(Bitmap.CompressFormat.JPEG, 70, stream);
@@ -178,10 +279,10 @@ public class CameraFragment extends android.support.v4.app.Fragment {
 
 
 
-                /*cameraTextureView.getCamera().takePicture(new Camera.ShutterCallback() {
+                /*cameraTextureView.getmCamera().takePicture(new Camera.ShutterCallback() {
                     @Override
                     public void onShutter() {
-                        //cameraTextureView.getCamera().stopPreview();
+                        //cameraTextureView.getmCamera().stopPreview();
                     }
                 }, null, new Camera.PictureCallback() { //instead of take picture, take a screenshot of the cameraframe
                     @Override
@@ -218,7 +319,7 @@ public class CameraFragment extends android.support.v4.app.Fragment {
                 Thread thread = new Thread(new Runnable() {
                     @Override
                     public void run() {
-                        cameraTextureView.getCamera().startPreview();
+                        cameraTextureView.getmCamera().startPreview();
                     }
                 });
                 thread.start();
@@ -247,6 +348,8 @@ public class CameraFragment extends android.support.v4.app.Fragment {
                         .commit(); */
             }
         });
+
+
 
 
 
@@ -296,16 +399,16 @@ public class CameraFragment extends android.support.v4.app.Fragment {
     @Override
     public void onResume() {
         super.onResume();
-        if (cameraTextureView.getCamera() == null) {
-            cameraTextureView.setCamera(getCameraInstance(backCameraId));
+        if (cameraTextureView.getmCamera() == null) {
+            cameraTextureView.setmCamera(getCameraInstance(backCameraId));
         }
     }
 
     @Override
     public void onPause() {
         super.onPause();
-        cameraTextureView.getCamera().release();
-        cameraTextureView.setCamera(null);
+        cameraTextureView.getmCamera().release();
+        cameraTextureView.setmCamera(null);
     }
 
     public Camera getCameraInstance(int cameraId){
@@ -318,6 +421,151 @@ public class CameraFragment extends android.support.v4.app.Fragment {
         }
         return c; // returns null if camera is unavailable
     }
+    private void DrawFocusRect(float RectLeft, float RectTop, float RectRight, float RectBottom, int color)
+    {
+
+        Log.v("CameraLite", "on DrawFocusRect");
+
+        canvas = holderTransparent.lockCanvas();
+        canvas.drawColor(0, PorterDuff.Mode.CLEAR);
+        //border's properties
+        paint = new Paint();
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setColor(color);
+        paint.setStrokeWidth(3);
+        canvas.drawRect(RectLeft, RectTop, RectRight, RectBottom, paint);
+
+
+
+
+
+        holderTransparent.unlockCanvasAndPost(canvas);
+    }
+
+    private Rect calculateTapArea(float x, float y) {
+        int left = clamp(Float.valueOf((x / cameraTextureView.getWidth()) * 2000 - 1000).intValue(), FOCUS_AREA_SIZE);
+        int top = clamp(Float.valueOf((y / cameraTextureView.getHeight()) * 2000 - 1000).intValue(), FOCUS_AREA_SIZE);
+
+        return new Rect(left, top, left + FOCUS_AREA_SIZE, top + FOCUS_AREA_SIZE);
+    }
+
+    private int clamp(int touchCoordinateInCameraReper, int focusAreaSize) {
+        int result;
+        if (Math.abs(touchCoordinateInCameraReper)+focusAreaSize/2>1000){
+            if (touchCoordinateInCameraReper>0){
+                result = 1000 - focusAreaSize/2;
+            } else {
+                result = -1000 + focusAreaSize/2;
+            }
+        } else{
+            result = touchCoordinateInCameraReper - focusAreaSize/2;
+        }
+        return result;
+    }
+
+
+    private void handleZoom(MotionEvent event, Camera.Parameters params) {
+        int maxZoom = params.getMaxZoom();
+        int zoom = params.getZoom();
+        float newDist = getFingerSpacing(event);
+
+        if (newDist > mDist) {
+            //zoom in
+            if ((zoom + 2) < maxZoom)
+                zoom += 2;
+        } else if (newDist < mDist) {
+            //zoom out
+            if ((zoom - 2) > 0)
+                zoom -= 2;
+        }
+        mDist = newDist;
+        params.setZoom(zoom);
+        cameraTextureView.getmCamera().setParameters(params);
+    }
+
+    public void handleFocus(MotionEvent event, Camera.Parameters params) {
+
+
+
+        RectLeft = event.getX() - 100;
+        RectTop = event.getY() - 100 ;
+        RectRight = event.getX() + 100;
+        RectBottom = event.getY() + 100;
+        DrawFocusRect(RectLeft , RectTop , RectRight , RectBottom , Color.GREEN);
+
+
+
+        if(cameraTextureView.getmCamera() != null){
+            Camera camera = cameraTextureView.getmCamera();
+
+            camera.cancelAutoFocus();
+
+            Rect focusRect = calculateTapArea(event.getX(), event.getY());
+
+
+            Camera.Parameters parameters = camera.getParameters();
+            parameters.setFocusMode(Camera.Parameters.FOCUS_MODE_MACRO);
+            if (parameters.getMaxNumFocusAreas() > 0) {
+                List<Camera.Area> mylist = new ArrayList<Camera.Area>();
+                mylist.add(new Camera.Area(focusRect, 1000));
+                parameters.setFocusAreas(mylist);
+            }
+
+
+
+            try {
+                camera.cancelAutoFocus();
+                camera.setParameters(parameters);
+                camera.startPreview();
+                camera.autoFocus(new Camera.AutoFocusCallback() {
+                    @Override
+                    public void onAutoFocus(boolean success, Camera camera) {
+                        if (camera.getParameters().getFocusMode() != Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE) {
+                            Camera.Parameters parameters = camera.getParameters();
+                            parameters.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
+                            if (parameters.getMaxNumFocusAreas() > 0) {
+                                parameters.setFocusAreas(null);
+
+                            }
+
+
+
+                            camera.setParameters(parameters);
+                            camera.startPreview();
+                        }
+
+                        Log.v(TAG, "Should remove canvas from here");
+                        canvas = holderTransparent.lockCanvas();
+                        canvas.drawColor(0, PorterDuff.Mode.CLEAR);
+
+                        holderTransparent.unlockCanvasAndPost(canvas);
+                    }
+                });
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+
+        }
+
+
+
+
+
+
+    }
+
+    /** Determine the space between the first two fingers */
+    private float getFingerSpacing(MotionEvent event) {
+        // ...
+        float x = event.getX(0) - event.getX(1);
+        float y = event.getY(0) - event.getY(1);
+
+
+        return (float)Math.sqrt(x * x + y * y);
+    }
+
+
 
     void switchCamera() {
         if (numOfCameras < 1) {
@@ -325,15 +573,15 @@ public class CameraFragment extends android.support.v4.app.Fragment {
         }
 
 
-        cameraTextureView.getCamera().stopPreview();
-        cameraTextureView.getCamera().release();
+        cameraTextureView.getmCamera().stopPreview();
+        cameraTextureView.getmCamera().release();
 
 
 
         if (isFacingBack) {
-            cameraTextureView.setCamera(getCameraInstance(frontCameraId));
+            cameraTextureView.setmCamera(getCameraInstance(frontCameraId));
         } else {
-            cameraTextureView.setCamera(getCameraInstance(backCameraId));
+            cameraTextureView.setmCamera(getCameraInstance(backCameraId));
         }
 
         isFacingBack = !isFacingBack;
@@ -407,6 +655,22 @@ public class CameraFragment extends android.support.v4.app.Fragment {
     public interface OnFragmentInteractionListener {
         // TODO: Update argument type and name
         public void onFragmentInteraction(Uri uri);
+    }
+
+
+    @Override
+    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height){
+
+    }
+
+    @Override
+    public void surfaceCreated(SurfaceHolder holder){
+
+    }
+
+    @Override
+    public void surfaceDestroyed(SurfaceHolder holder){
+
     }
 
 }
